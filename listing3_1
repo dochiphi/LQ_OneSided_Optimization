@@ -1,11 +1,12 @@
 import numpy as np
 import sympy as sp
+import matplotlib.pyplot as plt
+from scipy.integrate import solve_ivp
 
 #> #MAPLE
 #MYCODE
 
 #> # l1(t) is constant and equals b*x1f.
-#Define symbols and functions
 t,tf=sp.symbols('t tf')
 b,c=sp.symbols('b c')
 tau=tf-t
@@ -16,7 +17,6 @@ l1=sp.Function('l1')(t)
 l2=sp.Function('l2')(t)
 
 #> # the following is the remaining costate equation for l2(t), namely d(l2)/dt = -l1.
-#Solve costate (adjoint) equations
 eq_l1=sp.Eq(l1.diff(t), 0)
 sol_l1=sp.dsolve(eq_l1)
 
@@ -26,7 +26,6 @@ C2=sp.symbols('C2')
 l2_expr=-C1*t+C2 #l2(t)=-C1*t+C2 because d(l2)/dt=-l1(t)=-C1 
 
 #> # apply terminal conditions: l1(tf)=b*x1f, l2(tf)=c*x2f
-#Apply terminal conditions to find constants
 x1f,x2f=sp.symbols('x1f x2f')
 eq1=sp.Eq(C1, b*x1f) #l1(tf)=b*x1f
 eq2=sp.Eq(-C1*tf+C2, c*x2f) #l2(tf)=c*x2f
@@ -35,18 +34,15 @@ l2_expr=l2_expr.subs(constants) #l2(t)=-b*x1f*t+c*x2f+tf*b*x1f (=-C1*t+C2)
 u_expr=-l2_expr #u(t)=-l2(t)
 
 #> # define gain functions g1(t), g2(t)
-#Gains from eq 3.10b
 g1=(b*tau*(0.5*tau*c+1))/(tau**4*c*b/12+tau*c+tau**3*b/3+1)
 g2=(1/3*tau**3*c*b+tau**2*b+c)/(tau**4*c*b/12+tau*c+tau**3*b/3+1)
 gu=-(g1*x1+g2*x2)
 
 #> # convert to numerical functions for plotting
-#Convert symbolic gain functions to numerical
 g1_func=sp.lambdify((t, tf, b, c), g1, modules='numpy')
 g2_func=sp.lambdify((t, tf, b, c), g2, modules='numpy')
 
 #> # d(x2)/dt = -l2(t), x2(0) = 0
-#Solve state equations symbolically
 x2_func=sp.Function('x2')(t)
 sys_x2=sp.Eq(x2_func.diff(t), -l2_expr)
 sol_x2=sp.dsolve(sys_x2, ics={x2_func.subs(t, 0): 0})
@@ -59,25 +55,51 @@ sol_x1=sp.dsolve(sys_x1, ics={x1_func.subs(t, 0): 0})
 x1_sol=sol_x1.rhs
 
 #> # evaluate terminal values: x1(tf), x2(tf)
-#Evaluate terminal values
 x1_tf=x1_sol.subs(t, tf)
 x2_tf=x2_sol.subs(t, tf)
 
 #> # solve for x1f, x2f from terminal values
-#Solve for x1f and x2f
 sol_terminal=sp.solve([sp.Eq(x1f, x1_tf), sp.Eq(x2f, x2_tf)], (x1f, x2f))
 
 #> # u(0) = -l2(0)
-#Evaluate control at t=0
 u0=u_expr.subs(t, 0)
 
 #> # limits: c -> 0, b -> ∞
-#Symbolic limits
 limit_no_velocity=sp.limit(u_expr, c, 0)
 limit_perfect_intercept=sp.limit(u_expr, b, sp.oo)
 
+#> # simulate dynamics with w = 3g and plot x1(t)
+b_val = 100
+c_val = 1
+tf_val = 3
+w_val = 29.4  # 3g target acceleration
+
+def u_opt(t, x):
+    g1_val = g1_func(t, tf_val, b_val, c_val)
+    g2_val = g2_func(t, tf_val, b_val, c_val)
+    return -(g1_val * x[0] + g2_val * x[1])
+
+def dynamics(t, x):
+    x1, x2 = x
+    u = u_opt(t, x)
+    return [x2, u - w_val]
+
+t_span = (0, tf_val)
+t_eval = np.linspace(0, tf_val, 300)
+x0 = [0, 0]
+sol = solve_ivp(dynamics, t_span, x0, t_eval=t_eval)
+
+import matplotlib.pyplot as plt
+plt.plot(sol.t, sol.y[0], label='x1(t): Relative Separation', color='blue')
+plt.xlabel('Time (s)')
+plt.ylabel('Relative Separation (m)')
+plt.title('Relative Separation due to 3g Target Acceleration')
+plt.grid(True)
+plt.legend()
+plt.tight_layout()
+plt.show()
+
 #> # print results like Maple's eval, subs, limit
-#Print key outputs
 print("Control at t=0:", sp.simplify(u0))
 print("Limit of control as c -> 0:", limit_no_velocity)
 print("Limit of control as b -> ∞:", limit_perfect_intercept)
